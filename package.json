@@ -1,0 +1,26 @@
+{
+  "name": "branch-name-from-staged-changes",
+  "displayName": "Branch Name From Staged Changes",
+  "description": "根据当前 Git 暂存区的更改生成分支名称",
+  "version": "0.0.1",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:branchNameFromStagedChanges.generate"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "branchNameFromStagedChanges.generate",
+        "title": "生成基于暂存更改的分支名"
+      }
+    ]
+  }
+}
+
