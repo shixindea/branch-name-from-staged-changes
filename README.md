@@ -1,74 +1,80 @@
 # Branch Name From Commit Message
 
+根据 commit 文本生成 Git 分支名称的 VS Code 插件，支持中文与英文描述，可选接入 Kimi（Moonshot）大模型。
+
 GitHub 仓库：https://github.com/shixindea/branch-name-from-staged-changes
 
-根据 **commit 文本** 自动生成一个分支名称，可选接入 Kimi 大模型，并自动复制到剪贴板。
+---
 
-## 功能简介
+## 使用方法
 
-- 输入一段 commit 文本（如你准备提交的 commit message）
-- 基于规则识别分支类型（feat / fix / refactor / test / chore）
-- 从描述中提取最多三段关键词，生成形如 `feat/fix-login-bug` 的分支名
-- 如果配置了 Kimi（Moonshot）API，则优先由大模型生成更自然的分支名
-- 支持在 VS Code 命令面板中一键触发，并自动复制到剪贴板
+### 1. 打开要操作的项目
 
-典型生成示例：
+在 VS Code 中打开你的 Git 仓库所在文件夹即可，无需额外激活操作。
 
-- `feat/add-user-login`
-- `fix/record-status-error`
-- `refactor/audio-module`
-- `feat/change`（没有明显关键词时的兜底方案）
+### 2. 通过命令面板生成分支名
 
-## 使用方式
+1. 按 `Ctrl + Shift + P` 打开命令面板；
+2. 输入命令名称：`根据 commit 文本生成分支名`；
+3. 选择该命令（ID：`branchNameFromStagedChanges.generate`）；
+4. 在输入框中填写本次提交的 commit 文本，例如：
 
-### 1. 打开项目
+   ```text
+   fix: 修复录音结束后状态异常
+   ```
 
-在 VS Code 中打开你的 Git 仓库所在的文件夹。
+5. 回车确认后，插件会自动生成一个分支名。
 
-### 2. 可选：配置 Kimi 大模型（Moonshot）
+### 3. 查看与使用结果
 
-如果你希望由 Kimi 来帮你生成更智能的分支名，可以在扩展根目录创建一个 `ap-config.js` 文件（该文件已被 `.gitignore` 忽略，不会提交到 Git）：
+- 插件会将生成好的分支名写入系统剪贴板；
+- VS Code 右下角会弹出信息提示，例如：
 
-```js
-module.exports = {
-  AP_API_KEY: 'YOUR_KIMI_API_KEY',
-  AP_API_URL: 'https://api.moonshot.cn/v1/chat/completions',
-  AP_MODEL: 'moonshot-v1-8k'
-};
-```
-
-不配置 `ap-config.js` 也可以正常使用，此时仅使用本地规则生成分支名。
-
-### 3. 执行命令生成分支名
-
-在 VS Code 中：
-
-- 按 `Ctrl + Shift + P` 打开命令面板
-- 输入：`根据 commit 文本生成分支名`
-- 选择对应命令（ID: `branchNameFromStagedChanges.generate`）
-- 输入本次提交的 commit 文本，例如：
-
-  ```text
-  fix: 修复录音结束后状态异常
-  ```
-
-扩展会：
-
-- 尝试调用 Kimi（如已配置）生成一个分支名
-- 如果调用失败或未配置，则使用内置规则生成分支名
-
-### 4. 查看结果
-
-生成分支名后，扩展会将分支名自动复制到系统剪贴板，并在右下角提示，例如：
-
-> 大模型生成的分支名：`fix/record-status-error`，已复制到剪贴板
-
-或：
-
-> 规则生成的分支名：`fix/record-status-error`，已复制到剪贴板
+  - `大模型生成的分支名：fix/record-status-error，已复制到剪贴板`
+  - `规则生成的分支名：fix/record-status-error，已复制到剪贴板`
 
 你可以直接在终端中粘贴使用，例如：
 
 ```bash
 git checkout -b fix/record-status-error
 ```
+
+或在图形化 Git 工具中粘贴到“新建分支”输入框中。
+
+---
+
+## 行为细节与限制
+
+- 插件当前只提供一个命令：`branchNameFromStagedChanges.generate`；
+- 不依赖当前暂存文件或 diff 内容，仅基于你输入的 commit 文本工作；
+- 目前未在界面中提供额外设置项，所有高级配置均通过 `ap-config.js` 完成；
+- 若网络状况不佳或 Kimi 接口异常，插件会静默退回本地规则生成，不会中断你的操作。
+
+---
+
+## 常见问题（FAQ）
+
+- Q：必须配置 Kimi（Moonshot）才能用吗？  
+  A：不需要。不配置 `ap-config.js` 时，插件使用本地规则生成分支名，依然完全可用。
+
+- Q：支持中文 commit 吗？  
+  A：支持。插件会从中文描述中提取关键词，并做简单英文化/符号转换后拼接成分支名。
+
+- Q：生成分支名不满意怎么办？  
+  A：你可以修改输入的 commit 文本（例如更加精炼或突出关键词），再次运行命令，或者直接手动编辑生成的分支名。
+
+- Q：会不会上传代码或其它敏感信息？  
+  A：插件仅会将你在输入框中填写的 commit 文本发送给 Kimi 接口（在你配置了 `ap-config.js` 且网络可用的情况下）。不读取本地仓库内容，也不会上传代码 diff。
+
+---
+
+
+## 反馈与贡献
+
+- Bug 反馈与功能建议：请在 GitHub 仓库提 Issue
+- 欢迎通过 PR 贡献：
+  - 新的分支类型识别规则
+  - 关键词提取策略优化
+  - 更多大模型或 API 的适配
+
+你的反馈可以帮助这个小工具在实际工作流中变得更好用。

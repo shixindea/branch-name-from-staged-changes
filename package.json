@@ -2,7 +2,7 @@
   "name": "branch-name-from-staged-changes",
   "displayName": "Branch Name From Commit Message",
   "description": "根据输入的 commit 文本生成分支名称",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "yuanguoguo",
   "engines": {
     "vscode": "^1.80.0"
