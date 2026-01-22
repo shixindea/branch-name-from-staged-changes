@@ -1,5 +1,7 @@
 # Branch Name From Staged Changes
 
+GitHub 仓库：https://github.com/shixindea/branch-name-from-staged-changes
+
 根据当前 Git 暂存区的更改自动生成一个分支名称，并一键复制到剪贴板。
 
 ## 功能简介
