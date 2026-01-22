@@ -1,8 +1,8 @@
 {
   "name": "branch-name-from-staged-changes",
-  "displayName": "Branch Name From Staged Changes",
-  "description": "根据当前 Git 暂存区的更改生成分支名称",
-  "version": "1.0.0",
+  "displayName": "Branch Name From Commit Message",
+  "description": "根据输入的 commit 文本生成分支名称",
+  "version": "1.0.1",
   "publisher": "yuanguoguo",
   "engines": {
     "vscode": "^1.80.0"
@@ -18,7 +18,7 @@
     "commands": [
       {
         "command": "branchNameFromStagedChanges.generate",
-        "title": "生成基于暂存更改的分支名"
+        "title": "根据 commit 文本生成分支名"
       }
     ]
   }

@@ -1,159 +1,213 @@
-const vscode = require("vscode");
-const path = require("path");
-const util = require("util");
-const childProcess = require("child_process");
+const vscode = require('vscode');
+const util = require('util');
+const childProcess = require('child_process');
+const https = require('https');
 
 const execAsync = util.promisify(childProcess.exec);
 
-async function getWorkspaceRoot() {
-  const folders = vscode.workspace.workspaceFolders;
-  if (!folders || folders.length === 0) {
-    return undefined;
-  }
-  return folders[0].uri.fsPath;
+let apConfig = null;
+try {
+  // eslint-disable-next-line global-require, import/no-unresolved
+  apConfig = require('./ap-config');
+} catch (e) {}
+
+/**
+ * 1️⃣ 判断分支类型
+ */
+function detectBranchType(message) {
+  const msg = message.toLowerCase();
+
+  if (/^feat[:(]|新增|支持|增加|实现/.test(msg)) return 'feat';
+  if (/^fix[:(]|修复|解决|bug|问题|异常/.test(msg)) return 'fix';
+  if (/^refactor[:(]|重构|整理|拆分|优化结构/.test(msg)) return 'refactor';
+  if (/^test[:(]|测试/.test(msg)) return 'test';
+  if (/^chore[:(]|配置|依赖|脚本|ci|构建/.test(msg)) return 'chore';
+
+  return 'feat';
 }
 
-async function isInsideGitRepository(cwd) {
-  try {
-    const result = await execAsync("git rev-parse --is-inside-work-tree", {
-      cwd,
-    });
-    return result.stdout.trim() === "true";
-  } catch (_) {
-    return false;
-  }
-}
+/**
+ * 2️⃣ 提取描述关键词（不看路径）
+ */
+function extractKeywords(text) {
+  const cleaned = text
+    .replace(/^(feat|fix|refactor|test|chore)(\(.+\))?:?/i, '')
+    .toLowerCase();
 
-async function getStagedFiles(cwd) {
-  const result = await execAsync("git diff --cached --name-only", {
-    cwd,
-  });
-  return result.stdout
-    .split("\n")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
+  const words = cleaned
+    .replace(/[_./]/g, ' ')
+    .split(/[^a-z0-9\u4e00-\u9fa5]+/)
+    .filter(w => w.length >= 2);
 
-function inferScopeFromFiles(files) {
-  const counts = new Map();
-  for (const file of files) {
-    const segments = file.split(/[\\/]/);
-    if (segments.length === 0) {
-      continue;
-    }
-    const scope = segments[0].toLowerCase();
-    const value = counts.get(scope) || 0;
-    counts.set(scope, value + 1);
-  }
-  if (counts.size === 0) {
-    return undefined;
-  }
-  let bestScope = undefined;
-  let bestCount = -1;
-  for (const [scope, count] of counts.entries()) {
-    if (count > bestCount) {
-      bestScope = scope;
-      bestCount = count;
-    }
-  }
-  return bestScope;
-}
-
-function extractKeywordsFromFiles(files) {
-  const tokens = [];
-  for (const file of files) {
-    const base = path.basename(file, path.extname(file));
-    const replaced = base.replace(/[_\.]+/g, " ");
-    const split = replaced.split(/[^a-zA-Z0-9]+/);
-    for (const raw of split) {
-      const t = raw.toLowerCase();
-      if (!t) {
-        continue;
-      }
-      if (t.length < 3) {
-        continue;
-      }
-      tokens.push(t);
-    }
-  }
-  const unique = [];
+  const result = [];
   const seen = new Set();
-  for (const t of tokens) {
-    if (!seen.has(t)) {
-      seen.add(t);
-      unique.push(t);
+
+  for (const w of words) {
+    if (!seen.has(w)) {
+      seen.add(w);
+      result.push(w);
     }
-    if (unique.length >= 4) {
-      break;
+    if (result.length >= 3) break;
+  }
+
+  return result.length ? result.join('-') : 'change';
+}
+
+function sanitize(name) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9/_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/\/+/g, '/')
+    .replace(/^[-/]+|[-/]+$/g, '')
+    .slice(0, 60);
+}
+
+function limitDescWords(desc) {
+  const parts = String(desc || '')
+    .split('-')
+    .filter(Boolean);
+  const limited = parts.slice(0, 3);
+  return limited.length ? limited.join('-') : 'change';
+}
+
+/**
+ * 4️⃣ 生成分支名
+ */
+function generateBranchName(message) {
+  const type = detectBranchType(message);
+  const desc = limitDescWords(extractKeywords(message));
+  return sanitize(`${type}/${desc}`);
+}
+
+async function generateBranchNameFromAp(message) {
+  if (
+    !apConfig ||
+    !apConfig.AP_API_KEY ||
+    !apConfig.AP_API_URL ||
+    !apConfig.AP_MODEL
+  ) {
+    return null;
+  }
+
+  const payload = JSON.stringify({
+    model: apConfig.AP_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content:
+          '你是一个 Git 分支命名助手，只返回一个分支名，格式类似 feat/xxx，不要输出多余解释。'
+      },
+      {
+        role: 'user',
+        content: message
+      }
+    ],
+    temperature: 0.2,
+    max_tokens: 20
+  });
+
+  const url = new URL(apConfig.AP_API_URL);
+  const options = {
+    method: 'POST',
+    hostname: url.hostname,
+    path: url.pathname + url.search,
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+      Authorization: `Bearer ${apConfig.AP_API_KEY}`
     }
-  }
-  if (unique.length === 0) {
-    return ["change"];
-  }
-  return unique;
+  };
+
+  return new Promise(resolve => {
+    const req = https.request(options, res => {
+      let data = '';
+
+      res.on('data', chunk => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const content =
+            json &&
+            json.choices &&
+            json.choices[0] &&
+            json.choices[0].message &&
+            json.choices[0].message.content;
+
+          if (!content) {
+            resolve(null);
+            return;
+          }
+
+          const raw = String(content).trim();
+          const sanitized = sanitize(raw);
+
+          const parts = sanitized.split('/');
+          if (parts.length < 2) {
+            const limitedOnly = limitDescWords(sanitized);
+            resolve(limitedOnly || null);
+            return;
+          }
+
+          const type = parts[0] || detectBranchType(raw);
+          const desc = parts.slice(1).join('-');
+          const limitedDesc = limitDescWords(desc);
+          const finalName = sanitize(`${type}/${limitedDesc}`);
+
+          resolve(finalName || null);
+        } catch (err) {
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', () => {
+      resolve(null);
+    });
+
+    req.write(payload);
+    req.end();
+  });
 }
 
-function sanitizeBranchName(name) {
-  let result = name.toLowerCase();
-  result = result.replace(/[^a-z0-9/_-]+/g, "-");
-  result = result.replace(/-+/g, "-");
-  result = result.replace(/\/+/g, "/");
-  result = result.replace(/^[-/]+/, "");
-  result = result.replace(/[-/]+$/, "");
-  if (result.length === 0) {
-    return "feat/change";
-  }
-  if (result.length > 60) {
-    result = result.slice(0, 60);
-    result = result.replace(/[-/]+$/, "");
-  }
-  return result;
-}
+/**
+ * 命令入口
+ */
+async function generateBranchCommand() {
+  const message = await vscode.window.showInputBox({
+    prompt: '输入 commit message（用于生成分支名）',
+    placeHolder: '例如：fix: 修复录音结束后状态异常'
+  });
 
-function generateBranchNameFromFiles(files) {
-  const scope = inferScopeFromFiles(files);
-  const keywords = extractKeywordsFromFiles(files);
-  const scopePart = scope ? `${scope}-` : "";
-  const keywordPart = keywords.join("-");
-  const raw = `feat/${scopePart}${keywordPart}`;
-  return sanitizeBranchName(raw);
-}
+  if (!message) return;
 
-async function generateBranchNameCommand() {
-  const root = await getWorkspaceRoot();
-  if (!root) {
-    vscode.window.showErrorMessage("未找到工作区，无法生成分支名");
-    return;
-  }
-  const insideGit = await isInsideGitRepository(root);
-  if (!insideGit) {
-    vscode.window.showErrorMessage("当前工作区不是 Git 仓库");
-    return;
-  }
-  const files = await getStagedFiles(root);
-  if (!files.length) {
-    vscode.window.showInformationMessage("当前没有任何暂存的更改");
-    return;
-  }
-  const branchName = generateBranchNameFromFiles(files);
+  const ruleBranchName = generateBranchName(message);
+  const aiBranchName = await generateBranchNameFromAp(message);
+  const branchName = aiBranchName || ruleBranchName;
+  const from = aiBranchName ? '大模型生成的分支名：' : '规则生成的分支名：';
+
   await vscode.env.clipboard.writeText(branchName);
-  vscode.window.showInformationMessage(
-    `已根据暂存区更改生成分支名并复制到剪贴板: ${branchName}`
-  );
+  vscode.window.showInformationMessage(`${from}${branchName}，已复制到剪贴板`);
 }
 
+/**
+ * VSCode 生命周期
+ */
 function activate(context) {
-  const disposable = vscode.commands.registerCommand(
-    "branchNameFromStagedChanges.generate",
-    generateBranchNameCommand
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'branchNameFromStagedChanges.generate',
+      generateBranchCommand
+    )
   );
-  context.subscriptions.push(disposable);
 }
 
 function deactivate() {}
 
 module.exports = {
   activate,
-  deactivate,
+  deactivate
 };
-
