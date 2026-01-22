@@ -2,8 +2,8 @@
   "name": "branch-name-from-staged-changes",
   "displayName": "Branch Name From Staged Changes",
   "description": "根据当前 Git 暂存区的更改生成分支名称",
-  "version": "0.0.1",
-  "publisher": "your-name",
+  "version": "1.0.0",
+  "publisher": "yuanguoguo",
   "engines": {
     "vscode": "^1.80.0"
   },
